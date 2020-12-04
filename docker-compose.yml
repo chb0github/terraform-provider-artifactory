@@ -1,0 +1,9 @@
+version: "3.3"
+services:
+  artifactory:
+    container_name: artifactory
+    ports:
+    - 8080:8080
+    - 8081:8081
+    - 8082:8082
+    image: docker.bintray.io/jfrog/artifactory-pro

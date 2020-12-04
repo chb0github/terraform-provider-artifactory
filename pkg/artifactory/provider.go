@@ -134,7 +134,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		return nil, fmt.Errorf("either [username, password] or [api_key] or [access_token] must be set to use provider")
 	}
 
-	config, err := config.NewConfigBuilder().
+	cfg, err := config.NewConfigBuilder().
 		SetServiceDetails(details).
 		SetDryRun(false).
 		Build()
@@ -149,7 +149,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		return nil, err
 	}
 
-	rtnew, err := artifactorynew.New(&details, config)
+	rtnew, err := artifactorynew.New(&details, cfg)
 
 	if err != nil {
 		return nil, err
@@ -163,11 +163,13 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 
 	productid := "terraform-provider-artifactory/" + ProviderVersion
 	commandid := "Terraform/" + version.Version
-	usage.SendReportUsage(productid, commandid, rtnew)
+	if err := usage.SendReportUsage(productid, commandid, rtnew); err != nil{
+		return nil,err
+	}
 
 	rt := &ArtClient{
 		ArtOld: rtold,
-		ArtNew: rtnew,
+		ArtNew: &rtnew,
 	}
 
 	return rt, nil

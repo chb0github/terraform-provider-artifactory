@@ -7,4 +7,6 @@ require (
 	github.com/stretchr/testify v1.5.1
 )
 
+replace github.com/jfrog/jfrog-client-go => /Users/christianb/dev/jfrog/jfrog-client-go
+
 go 1.15

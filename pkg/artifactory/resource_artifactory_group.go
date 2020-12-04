@@ -1,20 +1,18 @@
 package artifactory
 
 import (
-	"context"
 	"fmt"
 	"github.com/hashicorp/terraform/helper/resource"
-	"net/http"
-
-	"github.com/atlassian/go-artifactory/v2/artifactory/v1"
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/jfrog/jfrog-client-go/artifactory/services"
+	"log"
 )
 
 func resourceArtifactoryGroup() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceGroupCreate,
+		Create: resourceGroupCreateOrUpdate,
 		Read:   resourceGroupRead,
-		Update: resourceGroupUpdate,
+		Update: resourceGroupCreateOrUpdate,
 		Delete: resourceGroupDelete,
 		Exists: resourceGroupExists,
 
@@ -56,28 +54,29 @@ func resourceArtifactoryGroup() *schema.Resource {
 	}
 }
 
-func unmarshalGroup(s *schema.ResourceData) (*v1.Group, error) {
+func unmarshalGroup(s *schema.ResourceData) (*services.Group, error) {
 	d := &ResourceData{s}
 
-	group := new(v1.Group)
-
-	group.Name = d.getStringRef("name", false)
-	group.Description = d.getStringRef("description", false)
-	group.AutoJoin = d.getBoolRef("auto_join", false)
-	group.AdminPrivileges = d.getBoolRef("admin_privileges", false)
-	group.Realm = d.getStringRef("realm", false)
-	group.RealmAttributes = d.getStringRef("realm_attributes", false)
-
+	group := services.Group{
+		Name:            d.getStringRef("name", false),
+		Description:     d.getStringRef("description", false),
+		AutoJoin:        d.getBoolRef("auto_join", false),
+		AdminPrivileges: d.getBoolRef("admin_privileges", false),
+		Realm:           d.getStringRef("realm", false),
+		RealmAttributes: d.getStringRef("realm_attributes", false),
+	}
 	// Validator
-	if group.AdminPrivileges != nil && group.AutoJoin != nil && *group.AdminPrivileges && *group.AutoJoin {
+	if group.AdminPrivileges != nil && group.AutoJoin != nil &&
+		*group.AdminPrivileges && *group.AutoJoin {
 		return nil, fmt.Errorf("error: auto_join cannot be true if admin_privileges is true")
 	}
 
-	return group, nil
+	return &group, nil
 }
 
-func resourceGroupCreate(d *schema.ResourceData, m interface{}) error {
-	c := m.(*ArtClient).ArtOld
+func resourceGroupCreateOrUpdate(d *schema.ResourceData, m interface{}) error {
+
+	client := *m.(*ArtClient).ArtNew
 
 	group, err := unmarshalGroup(d)
 
@@ -85,40 +84,32 @@ func resourceGroupCreate(d *schema.ResourceData, m interface{}) error {
 		return err
 	}
 
-	_, err = c.V1.Security.CreateOrReplaceGroup(context.Background(), *group.Name, group)
+	if err := client.CreateGroup(*group); err != nil {
+		return resource.Retry(d.Timeout(schema.TimeoutCreate), func() *resource.RetryError {
+
+			if err := client.CreateGroup(*group); err != nil {
+				return resource.NonRetryableError(err)
+			}
+			return resource.NonRetryableError(resourceGroupRead(d, m))
+		})
+	}
+	d.SetId(*group.Name)
+	return nil
+}
+
+func resourceGroupRead(d *schema.ResourceData, m interface{}) error {
+	client := *m.(*ArtClient).ArtNew
+	group, err := client.GetGroup(d.Id())
 
 	if err != nil {
 		return err
 	}
 
-	d.SetId(*group.Name)
-	return resource.Retry(d.Timeout(schema.TimeoutCreate), func() *resource.RetryError {
-		c := m.(*ArtClient).ArtOld
-		_, resp, err := c.V1.Security.GetGroup(context.Background(), d.Id())
-		if err != nil {
-			return resource.NonRetryableError(fmt.Errorf("error describing group: %s", err))
-		}
-
-		if resp.StatusCode == http.StatusNotFound {
-			return resource.RetryableError(fmt.Errorf("expected group to be created, but currently not found"))
-		}
-
-		return resource.NonRetryableError(resourceGroupRead(d, m))
-	})
-}
-
-func resourceGroupRead(d *schema.ResourceData, m interface{}) error {
-	c := m.(*ArtClient).ArtOld
-
-	group, resp, err := c.V1.Security.GetGroup(context.Background(), d.Id())
-
 	// If we 404 it is likely the resources was externally deleted
 	// If the ID is updated to blank, this tells Terraform the resource no longer exist
-	if resp.StatusCode == http.StatusNotFound {
+	if group == nil {
 		d.SetId("")
-		return nil
-	} else if err != nil {
-		return err
+		return fmt.Errorf("no group returned, it may have been externally deleted")
 	}
 
 	hasErr := false
@@ -135,48 +126,14 @@ func resourceGroupRead(d *schema.ResourceData, m interface{}) error {
 	return nil
 }
 
-func resourceGroupUpdate(d *schema.ResourceData, m interface{}) error {
-	c := m.(*ArtClient).ArtOld
-	group, err := unmarshalGroup(d)
-	if err != nil {
-		return err
-	}
-	_, err = c.V1.Security.UpdateGroup(context.Background(), d.Id(), group)
-	if err != nil {
-		return err
-	}
-
-	d.SetId(*group.Name)
-	return resourceGroupRead(d, m)
+func resourceGroupDelete(group *schema.ResourceData, m interface{}) error {
+	client := *m.(*ArtClient).ArtNew
+	log.Printf("Deleting group %s", group.Id())
+	return client.DeleteGroup(group.Id())
 }
 
-func resourceGroupDelete(d *schema.ResourceData, m interface{}) error {
-	c := m.(*ArtClient).ArtOld
-	group, err := unmarshalGroup(d)
-	if err != nil {
-		return err
-	}
-
-	_, resp, err := c.V1.Security.DeleteGroup(context.Background(), *group.Name)
-
-	if err != nil && resp.StatusCode == http.StatusNotFound {
-		return nil
-	}
-
-	return err
-}
-
-func resourceGroupExists(d *schema.ResourceData, m interface{}) (bool, error) {
-	c := m.(*ArtClient).ArtOld
-
-	groupName := d.Id()
-	_, resp, err := c.V1.Security.GetGroup(context.Background(), groupName)
-
-	if resp.StatusCode == http.StatusNotFound {
-		return false, nil
-	} else if err != nil {
-		return false, err
-	}
-
-	return true, nil
+func resourceGroupExists(group *schema.ResourceData, m interface{}) (bool, error) {
+	client := *m.(*ArtClient).ArtNew
+	log.Printf("Check group %s", group.Id())
+	return client.GroupExists(group.Id())
 }

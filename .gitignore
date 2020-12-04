@@ -1,2 +1,9 @@
 terraform-provider-artifactory
 dist/
+.idea/
+.terraform/
+terraform*
+*.tf
+*.iml
+http-client.private.env.json
+*.http
