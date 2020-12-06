@@ -5,14 +5,13 @@ import (
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/jfrog/jfrog-client-go/artifactory/services"
-	"log"
 )
 
 func resourceArtifactoryGroup() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceGroupCreateOrUpdate,
+		Create: resourceGroupCreate,
 		Read:   resourceGroupRead,
-		Update: resourceGroupCreateOrUpdate,
+		Update: resourceGroupUpdate,
 		Delete: resourceGroupDelete,
 		Exists: resourceGroupExists,
 
@@ -58,23 +57,22 @@ func unmarshalGroup(s *schema.ResourceData) (*services.Group, error) {
 	d := &ResourceData{s}
 
 	group := services.Group{
-		Name:            d.getStringRef("name", false),
-		Description:     d.getStringRef("description", false),
-		AutoJoin:        d.getBoolRef("auto_join", false),
-		AdminPrivileges: d.getBoolRef("admin_privileges", false),
-		Realm:           d.getStringRef("realm", false),
-		RealmAttributes: d.getStringRef("realm_attributes", false),
+		Name: d.get("name", none).(string),
+		Description:     d.get("description", none).(string),
+		AutoJoin:        d.get("auto_join",no).(bool),
+		AdminPrivileges: d.get("admin_privileges", no).(bool),
+		Realm:           d.get("realm", blank).(string),
+		RealmAttributes: d.get("realm_attributes", blank).(string),
 	}
 	// Validator
-	if group.AdminPrivileges != nil && group.AutoJoin != nil &&
-		*group.AdminPrivileges && *group.AutoJoin {
+	if group.AdminPrivileges && group.AutoJoin {
 		return nil, fmt.Errorf("error: auto_join cannot be true if admin_privileges is true")
 	}
 
 	return &group, nil
 }
 
-func resourceGroupCreateOrUpdate(d *schema.ResourceData, m interface{}) error {
+func resourceGroupCreate(d *schema.ResourceData, m interface{}) error {
 
 	client := *m.(*ArtClient).ArtNew
 
@@ -93,8 +91,11 @@ func resourceGroupCreateOrUpdate(d *schema.ResourceData, m interface{}) error {
 			return resource.NonRetryableError(resourceGroupRead(d, m))
 		})
 	}
-	d.SetId(*group.Name)
+	d.SetId(group.Name)
 	return nil
+}
+func resourceGroupUpdate(d *schema.ResourceData, m interface{}) error {
+	return resourceGroupCreate(d,m)
 }
 
 func resourceGroupRead(d *schema.ResourceData, m interface{}) error {
@@ -128,12 +129,10 @@ func resourceGroupRead(d *schema.ResourceData, m interface{}) error {
 
 func resourceGroupDelete(group *schema.ResourceData, m interface{}) error {
 	client := *m.(*ArtClient).ArtNew
-	log.Printf("Deleting group %s", group.Id())
 	return client.DeleteGroup(group.Id())
 }
 
 func resourceGroupExists(group *schema.ResourceData, m interface{}) (bool, error) {
 	client := *m.(*ArtClient).ArtNew
-	log.Printf("Check group %s", group.Id())
 	return client.GroupExists(group.Id())
 }

@@ -163,8 +163,9 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 
 	productid := "terraform-provider-artifactory/" + ProviderVersion
 	commandid := "Terraform/" + version.Version
+	// SAM: recommend logging error and continuing because this may not be considered a failure
 	if err := usage.SendReportUsage(productid, commandid, rtnew); err != nil{
-		return nil,err
+		log.Error(err)
 	}
 
 	rt := &ArtClient{

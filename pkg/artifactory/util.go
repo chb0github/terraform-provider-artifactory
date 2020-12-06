@@ -18,6 +18,26 @@ func (d *ResourceData) getStringRef(key string, onlyIfChanged bool) *string {
 	return nil
 }
 
+var none = func(k string) interface{} {
+	return nil
+}
+var blank = func(k string) interface{} {
+	return nil
+}
+var no = func(k string) interface{} {
+	return false
+}
+var yes = func(k string) interface{} {
+	return true
+}
+
+func (d *ResourceData) get(key string, ifMissing func(k string) interface{}) interface{} {
+	if v, ok := d.GetOk(key); ok {
+		return v
+	}
+	return ifMissing(key)
+}
+
 func (d *ResourceData) getBoolRef(key string, onlyIfChanged bool) *bool {
 	if v, ok := d.GetOkExists(key); ok && (!onlyIfChanged || d.HasChange(key)) {
 		return artifactory.Bool(v.(bool))

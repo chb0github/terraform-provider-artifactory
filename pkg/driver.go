@@ -2,25 +2,24 @@ package main
 
 import (
 	"fmt"
-	"github.com/atlassian/terraform-provider-artifactory/pkg/artifactory"
 	artifactorynew "github.com/jfrog/jfrog-client-go/artifactory"
 	"github.com/jfrog/jfrog-client-go/artifactory/auth"
 	"github.com/jfrog/jfrog-client-go/artifactory/services"
 	"github.com/jfrog/jfrog-client-go/config"
 	"github.com/jfrog/jfrog-client-go/utils/log"
+	"math/rand"
 )
 
 func main() {
-	provider := artifactory.Provider()
 	details := auth.NewArtifactoryDetails()
 	details.SetUser("admin")
-	details.SetPassword("Password1")
+	details.SetPassword("password")
 	details.SetUrl("http://localhost:8081/artifactory/")
 	cfg, err := config.NewConfigBuilder().
 		SetServiceDetails(details).
 		SetDryRun(false).
 		Build()
-	log.SetLogger(log.NewLogger(log.DEBUG,nil))
+	log.SetLogger(log.NewLogger(log.DEBUG, nil))
 	rt, err := artifactorynew.New(&details, cfg)
 	gs := services.NewGroupService(rt.Client())
 	gs.SetArtifactoryDetails(details)
@@ -29,19 +28,50 @@ func main() {
 		panic("oh shit")
 	}
 
-	sources := provider.DataSources()
 	description := "hello"
-	name := "ABC123"
-	err = gs.CreateGroup(services.Group{
-		Name:            &name,
-		Description:     &description,
-		AutoJoin:        new(bool),
-		AdminPrivileges: new(bool),
-		Realm:           nil,
-		RealmAttributes: nil,
-	})
+
+	name := fmt.Sprintf("test%d",  rand.Int())
+	for exists, _ := gs.GroupExits(name); ; {
+		if !exists {
+			break
+		}
+	}
+	group := services.Group{
+		Name:            name,
+		Description:     description,
+		AutoJoin:        false,
+		AdminPrivileges: true,
+		Realm:           "internal",
+		RealmAttributes: "",
+	}
+	err = gs.CreateGroup(group)
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Printf("hello %s",sources)
+	g, err := gs.GetGroup(name)
+	if err != nil {
+		panic(err)
+	}
+	if g == nil {
+		panic("no group")
+	}
+	if *g != group {
+		panic("not equal")
+	}
+	group.Description = "Changed"
+	err = gs.CreateGroup(group)
+	g, err = gs.GetGroup(name)
+	if err != nil {
+		panic(err)
+	}
+	if g == nil {
+		panic("no group")
+	}
+	if *g != group {
+		panic("not equal")
+	}
+	if err := gs.DeleteGroup(name); err != nil {
+		panic("boom")
+	}
+
 }
