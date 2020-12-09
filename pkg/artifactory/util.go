@@ -22,7 +22,7 @@ var none = func(k string) interface{} {
 	return nil
 }
 var blank = func(k string) interface{} {
-	return nil
+	return ""
 }
 var no = func(k string) interface{} {
 	return false

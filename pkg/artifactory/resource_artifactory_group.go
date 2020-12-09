@@ -57,8 +57,8 @@ func unmarshalGroup(s *schema.ResourceData) (*services.Group, error) {
 	d := &ResourceData{s}
 
 	group := services.Group{
-		Name: d.get("name", none).(string),
-		Description:     d.get("description", none).(string),
+		Name: d.get("name", blank).(string),
+		Description:     d.get("description", blank).(string),
 		AutoJoin:        d.get("auto_join",no).(bool),
 		AdminPrivileges: d.get("admin_privileges", no).(bool),
 		Realm:           d.get("realm", blank).(string),
